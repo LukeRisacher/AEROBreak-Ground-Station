@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <title>Rocket Telemetry Dashboard</title>
-  <!-- Load Chart.js from CDN -->
+  <!-- Load Chart.js from a CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
@@ -11,48 +11,61 @@
       font-family: sans-serif;
       padding: 1rem;
     }
-    .chart-container {
-      width: 48%;
-      display: inline-block;
-      margin: 1% 1%;
-      vertical-align: top;
+    .chart-row {
+      display: flex;
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      margin-bottom: 1rem;
     }
+    .chart-container {
+      width: 49%;
+      border: 1px solid #ccc;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    /* Full width for GPS chart */
     #gps-container {
-      width: 98%;
-      margin: 1% 1%;
-      display: inline-block;
+      width: 100%;
     }
   </style>
 </head>
 <body>
   <h1>Rocket Telemetry Dashboard</h1>
 
-  <div class="chart-container">
-    <canvas id="altitudeChart"></canvas>
-  </div>
-  <div class="chart-container">
-    <canvas id="temperatureChart"></canvas>
-  </div>
-
-  <div class="chart-container">
-    <canvas id="accelChart"></canvas>
-  </div>
-  <div class="chart-container">
-    <canvas id="descentChart"></canvas>
+  <!-- First row: Altitude & Temperature -->
+  <div class="chart-row">
+    <div class="chart-container">
+      <canvas id="altitudeChart"></canvas>
+    </div>
+    <div class="chart-container">
+      <canvas id="temperatureChart"></canvas>
+    </div>
   </div>
 
-  <div id="gps-container">
+  <!-- Second row: Acceleration & Descent Rate -->
+  <div class="chart-row">
+    <div class="chart-container">
+      <canvas id="accelChart"></canvas>
+    </div>
+    <div class="chart-container">
+      <canvas id="descentChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Third row: GPS (full width) -->
+  <div class="chart-container" id="gps-container">
     <canvas id="gpsChart"></canvas>
   </div>
 
   <script>
-    // Prepare Chart.js chart instances
+    // Create the Chart.js contexts
     const altitudeCtx = document.getElementById('altitudeChart').getContext('2d');
     const temperatureCtx = document.getElementById('temperatureChart').getContext('2d');
     const accelCtx = document.getElementById('accelChart').getContext('2d');
     const descentCtx = document.getElementById('descentChart').getContext('2d');
     const gpsCtx = document.getElementById('gpsChart').getContext('2d');
 
+    // --- Chart Instances ---
     let altitudeChart = new Chart(altitudeCtx, {
       type: 'line',
       data: {
@@ -66,8 +79,15 @@
       },
       options: {
         scales: {
-          x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Altitude (ft)' }, suggestedMax: 1500 }
+          x: {
+            title: { display: true, text: 'Time (s)' }
+          },
+          y: {
+            title: { display: true, text: 'Altitude (ft)' },
+            // Always start at 0, default to 1400, but scale if data exceeds 1400
+            min: 0,
+            suggestedMax: 1400
+          }
         }
       }
     });
@@ -86,7 +106,7 @@
       options: {
         scales: {
           x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Temperature (°F)' }, suggestedMin: 50, suggestedMax: 100 }
+          y: { title: { display: true, text: 'Temperature (°F)' } }
         }
       }
     });
@@ -105,7 +125,7 @@
       options: {
         scales: {
           x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Acceleration (ft/s^2)' }, suggestedMin: -10, suggestedMax: 10 }
+          y: { title: { display: true, text: 'Acceleration (ft/s^2)' } }
         }
       }
     });
@@ -124,7 +144,7 @@
       options: {
         scales: {
           x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Descent Rate (ft/s)' }, suggestedMin: 0, suggestedMax: 50 }
+          y: { title: { display: true, text: 'Descent Rate (ft/s)' } }
         }
       }
     });
@@ -149,86 +169,91 @@
       }
     });
 
-    // Track the first timestamp for 2 significant figures in time
-    let startTime = null;
-    function getRelativeTime(timestamp) {
-      if (!startTime) {
-        startTime = timestamp;
+    // --- Time Handling: Relative to first data timestamp ---
+    let launchTime = null;
+    function relativeTime(absoluteT) {
+      if (launchTime === null) {
+        // Initialize 'launchTime' to the first data's timestamp
+        launchTime = absoluteT;
       }
-      let seconds = timestamp - startTime;
-      return +seconds.toFixed(2);
+      let dt = absoluteT - launchTime;
+      return +dt.toFixed(2); // 2 significant figures
     }
 
+    // --- Fetch Data from Flask and Update Charts ---
     async function fetchDataAndUpdateCharts() {
-      const response = await fetch('/data');
-      const telemetry = await response.json();
+      try {
+        const response = await fetch('/data');
+        const telemetry = await response.json();
 
-      // Clear old data
-      altitudeChart.data.labels = [];
-      altitudeChart.data.datasets[0].data = [];
+        // Clear old data
+        altitudeChart.data.labels = [];
+        altitudeChart.data.datasets[0].data = [];
 
-      temperatureChart.data.labels = [];
-      temperatureChart.data.datasets[0].data = [];
+        temperatureChart.data.labels = [];
+        temperatureChart.data.datasets[0].data = [];
 
-      accelChart.data.labels = [];
-      accelChart.data.datasets[0].data = [];
+        accelChart.data.labels = [];
+        accelChart.data.datasets[0].data = [];
 
-      descentChart.data.labels = [];
-      descentChart.data.datasets[0].data = [];
+        descentChart.data.labels = [];
+        descentChart.data.datasets[0].data = [];
 
-      gpsChart.data.datasets[0].data = [];
-      gpsChart.data.datasets[0].pointBackgroundColor = [];
+        gpsChart.data.datasets[0].data = [];
+        gpsChart.data.datasets[0].pointBackgroundColor = [];
 
-      // Rebuild
-      for (let i = 0; i < telemetry.length; i++) {
-        const entry = telemetry[i];
-        const t = getRelativeTime(entry.timestamp);
+        // Rebuild
+        for (let i = 0; i < telemetry.length; i++) {
+          const entry = telemetry[i];
+          const timeSec = relativeTime(entry.timestamp);
 
-        // Altitude
-        if (entry.altitude !== null) {
-          altitudeChart.data.labels.push(t);
-          altitudeChart.data.datasets[0].data.push(entry.altitude.toFixed(2));
+          // Altitude
+          if (entry.altitude !== null) {
+            altitudeChart.data.labels.push(timeSec);
+            altitudeChart.data.datasets[0].data.push(entry.altitude.toFixed(2));
+          }
+
+          // Temperature
+          if (entry.temperature !== null) {
+            temperatureChart.data.labels.push(timeSec);
+            temperatureChart.data.datasets[0].data.push(entry.temperature.toFixed(2));
+          }
+
+          // Acceleration
+          if (entry.acceleration !== null) {
+            accelChart.data.labels.push(timeSec);
+            accelChart.data.datasets[0].data.push(entry.acceleration.toFixed(2));
+          }
+
+          // Descent Rate
+          if (entry.descent_rate !== null) {
+            descentChart.data.labels.push(timeSec);
+            descentChart.data.datasets[0].data.push(entry.descent_rate.toFixed(2));
+          }
+
+          // GPS
+          if (entry.latitude !== null && entry.longitude !== null) {
+            // color from older points (blue) to newer points (red)
+            let fraction = i / telemetry.length;
+            let color = `rgba(${Math.round(255*fraction)}, 0, ${Math.round(255*(1-fraction))}, 1)`;
+            gpsChart.data.datasets[0].data.push({ x: +entry.longitude, y: +entry.latitude });
+            gpsChart.data.datasets[0].pointBackgroundColor.push(color);
+          }
         }
 
-        // Temperature
-        if (entry.temperature !== null) {
-          temperatureChart.data.labels.push(t);
-          temperatureChart.data.datasets[0].data.push(entry.temperature.toFixed(2));
-        }
+        // Update the charts without animation to avoid flicker
+        altitudeChart.update('none');
+        temperatureChart.update('none');
+        accelChart.update('none');
+        descentChart.update('none');
+        gpsChart.update('none');
 
-        // Acceleration
-        if (entry.acceleration !== null) {
-          accelChart.data.labels.push(t);
-          accelChart.data.datasets[0].data.push(entry.acceleration.toFixed(2));
-        }
-
-        // Descent rate
-        if (entry.descent_rate !== null) {
-          descentChart.data.labels.push(t);
-          descentChart.data.datasets[0].data.push(entry.descent_rate.toFixed(2));
-        }
-
-        // GPS
-        if (entry.latitude !== null && entry.longitude !== null) {
-          // Color code from older (blue) to newer (red)
-          let fraction = i / telemetry.length;
-          let color = `rgba(${Math.round(255 * fraction)}, 0, ${Math.round(255 * (1 - fraction))}, 1)`;
-          gpsChart.data.datasets[0].data.push({
-            x: +entry.longitude.toFixed(6),
-            y: +entry.latitude.toFixed(6)
-          });
-          gpsChart.data.datasets[0].pointBackgroundColor.push(color);
-        }
+      } catch (err) {
+        console.error("Error fetching data:", err);
       }
-
-      altitudeChart.update('none');
-      temperatureChart.update('none');
-      accelChart.update('none');
-      descentChart.update('none');
-      gpsChart.update('none');
     }
 
-    // Poll the server every second
+    // Poll every second
     setInterval(fetchDataAndUpdateCharts, 1000);
     fetchDataAndUpdateCharts();
   </script>

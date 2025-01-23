@@ -37,7 +37,7 @@ def get_recent_data(count=200):
             dt = t - prev_time
             if dt != 0:
                 # positive descent rate if altitude is dropping
-                descent_rate = max(0, (prev_alt - alt) / dt)
+                descent_rate = (prev_alt - alt) / dt
 
         data.append({
             'timestamp': t,
