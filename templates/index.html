@@ -3,7 +3,6 @@
 <head>
   <meta charset="utf-8">
   <title>Rocket Telemetry Dashboard</title>
-  <!-- Load Chart.js from a CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
@@ -23,7 +22,6 @@
       padding: 8px;
       box-sizing: border-box;
     }
-    /* Full width for GPS chart */
     #gps-container {
       width: 100%;
     }
@@ -32,7 +30,7 @@
 <body>
   <h1>Rocket Telemetry Dashboard</h1>
 
-  <!-- First row: Altitude & Temperature -->
+  <!-- Row 1: Altitude & Temperature -->
   <div class="chart-row">
     <div class="chart-container">
       <canvas id="altitudeChart"></canvas>
@@ -42,34 +40,27 @@
     </div>
   </div>
 
-  <!-- Second row: Acceleration & Descent Rate -->
+  <!-- Row 2: Acceleration & Velocity -->
   <div class="chart-row">
     <div class="chart-container">
       <canvas id="accelChart"></canvas>
     </div>
     <div class="chart-container">
-      <canvas id="descentChart"></canvas>
+      <canvas id="velocityChart"></canvas>
     </div>
   </div>
 
-  <!-- Third row: GPS (full width) -->
+  <!-- Row 3: GPS Path -->
   <div class="chart-container" id="gps-container">
     <canvas id="gpsChart"></canvas>
   </div>
 
   <script>
-    // Create the Chart.js contexts
-    const altitudeCtx = document.getElementById('altitudeChart').getContext('2d');
-    const temperatureCtx = document.getElementById('temperatureChart').getContext('2d');
-    const accelCtx = document.getElementById('accelChart').getContext('2d');
-    const descentCtx = document.getElementById('descentChart').getContext('2d');
-    const gpsCtx = document.getElementById('gpsChart').getContext('2d');
-
-    // --- Chart Instances ---
-    let altitudeChart = new Chart(altitudeCtx, {
+    // ------------------- CHARTS --------------------
+    // 1) Altitude
+    const altitudeChart = new Chart(document.getElementById('altitudeChart'), {
       type: 'line',
       data: {
-        labels: [],
         datasets: [{
           label: 'Altitude (ft)',
           data: [],
@@ -80,11 +71,15 @@
       options: {
         scales: {
           x: {
-            title: { display: true, text: 'Time (s)' }
+            type: 'linear',
+            title: { display: true, text: 'Time (s)' },
+            min: 0,
+            ticks: {
+              callback: (val) => (+val).toFixed(2)
+            }
           },
           y: {
             title: { display: true, text: 'Altitude (ft)' },
-            // Always start at 0, default to 1400, but scale if data exceeds 1400
             min: 0,
             suggestedMax: 1400
           }
@@ -92,10 +87,10 @@
       }
     });
 
-    let temperatureChart = new Chart(temperatureCtx, {
+    // 2) Temperature
+    const temperatureChart = new Chart(document.getElementById('temperatureChart'), {
       type: 'line',
       data: {
-        labels: [],
         datasets: [{
           label: 'Temperature (°F)',
           data: [],
@@ -105,16 +100,25 @@
       },
       options: {
         scales: {
-          x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Temperature (°F)' } }
+          x: {
+            type: 'linear',
+            title: { display: true, text: 'Time (s)' },
+            min: 0,
+            ticks: {
+              callback: (val) => (+val).toFixed(2)
+            }
+          },
+          y: {
+            title: { display: true, text: 'Temperature (°F)' }
+          }
         }
       }
     });
 
-    let accelChart = new Chart(accelCtx, {
+    // 3) Acceleration
+    const accelChart = new Chart(document.getElementById('accelChart'), {
       type: 'line',
       data: {
-        labels: [],
         datasets: [{
           label: 'Acceleration (ft/s^2)',
           data: [],
@@ -124,18 +128,27 @@
       },
       options: {
         scales: {
-          x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Acceleration (ft/s^2)' } }
+          x: {
+            type: 'linear',
+            title: { display: true, text: 'Time (s)' },
+            min: 0,
+            ticks: {
+              callback: (val) => (+val).toFixed(2)
+            }
+          },
+          y: {
+            title: { display: true, text: 'Acceleration (ft/s^2)' }
+          }
         }
       }
     });
 
-    let descentChart = new Chart(descentCtx, {
+    // 4) Velocity
+    const velocityChart = new Chart(document.getElementById('velocityChart'), {
       type: 'line',
       data: {
-        labels: [],
         datasets: [{
-          label: 'Descent Rate (ft/s)',
+          label: 'Velocity (ft/s)',
           data: [],
           borderColor: 'orange',
           fill: false
@@ -143,20 +156,30 @@
       },
       options: {
         scales: {
-          x: { title: { display: true, text: 'Time (s)' } },
-          y: { title: { display: true, text: 'Descent Rate (ft/s)' } }
+          x: {
+            type: 'linear',
+            title: { display: true, text: 'Time (s)' },
+            min: 0,
+            ticks: {
+              callback: (val) => (+val).toFixed(2)
+            }
+          },
+          y: {
+            title: { display: true, text: 'Velocity (ft/s)' }
+          }
         }
       }
     });
 
-    let gpsChart = new Chart(gpsCtx, {
+    // 5) GPS Chart
+    const gpsChart = new Chart(document.getElementById('gpsChart'), {
       type: 'scatter',
       data: {
         datasets: [{
           label: 'GPS Path',
           data: [],
           showLine: true,
-          borderColor: 'grey',
+          borderColor: 'gray',
           pointBackgroundColor: [],
           pointRadius: 4
         }]
@@ -169,84 +192,94 @@
       }
     });
 
-    // --- Time Handling: Relative to first data timestamp ---
-    let launchTime = null;
-    function relativeTime(absoluteT) {
-      if (launchTime === null) {
-        // Initialize 'launchTime' to the first data's timestamp
-        launchTime = absoluteT;
-      }
-      let dt = absoluteT - launchTime;
-      return +dt.toFixed(2); // 2 significant figures
-    }
-
-    // --- Fetch Data from Flask and Update Charts ---
-    async function fetchDataAndUpdateCharts() {
-      try {
-        const response = await fetch('/data');
-        const telemetry = await response.json();
-
-        // Clear old data
-        altitudeChart.data.labels = [];
+    // ------------------- PROCESS SAMPLES --------------------
+    function processSamples(samples) {
+      if (!Array.isArray(samples) || samples.length === 0) {
+        // Clear all
         altitudeChart.data.datasets[0].data = [];
-
-        temperatureChart.data.labels = [];
         temperatureChart.data.datasets[0].data = [];
-
-        accelChart.data.labels = [];
         accelChart.data.datasets[0].data = [];
-
-        descentChart.data.labels = [];
-        descentChart.data.datasets[0].data = [];
-
-        gpsChart.data.datasets[0].data = [];
-        gpsChart.data.datasets[0].pointBackgroundColor = [];
-
-        // Rebuild
-        for (let i = 0; i < telemetry.length; i++) {
-          const entry = telemetry[i];
-          const timeSec = relativeTime(entry.timestamp);
-
-          // Altitude
-          if (entry.altitude !== null) {
-            altitudeChart.data.labels.push(timeSec);
-            altitudeChart.data.datasets[0].data.push(entry.altitude.toFixed(2));
-          }
-
-          // Temperature
-          if (entry.temperature !== null) {
-            temperatureChart.data.labels.push(timeSec);
-            temperatureChart.data.datasets[0].data.push(entry.temperature.toFixed(2));
-          }
-
-          // Acceleration
-          if (entry.acceleration !== null) {
-            accelChart.data.labels.push(timeSec);
-            accelChart.data.datasets[0].data.push(entry.acceleration.toFixed(2));
-          }
-
-          // Descent Rate
-          if (entry.descent_rate !== null) {
-            descentChart.data.labels.push(timeSec);
-            descentChart.data.datasets[0].data.push(entry.descent_rate.toFixed(2));
-          }
-
-          // GPS
-          if (entry.latitude !== null && entry.longitude !== null) {
-            // color from older points (blue) to newer points (red)
-            let fraction = i / telemetry.length;
-            let color = `rgba(${Math.round(255*fraction)}, 0, ${Math.round(255*(1-fraction))}, 1)`;
-            gpsChart.data.datasets[0].data.push({ x: +entry.longitude, y: +entry.latitude });
-            gpsChart.data.datasets[0].pointBackgroundColor.push(color);
-          }
-        }
-
-        // Update the charts without animation to avoid flicker
+        velocityChart.data.datasets[0].data = [];
         altitudeChart.update('none');
         temperatureChart.update('none');
         accelChart.update('none');
-        descentChart.update('none');
+        velocityChart.update('none');
+        return;
+      }
+
+      // Sort by ascending timestamp
+      samples.sort((a,b) => a.timestamp - b.timestamp);
+      const t0 = samples[0].timestamp;
+
+      const altData = [];
+      const tempData = [];
+      const accelData = [];
+      const velData = [];
+
+      for (let i = 0; i < samples.length; i++) {
+        const s = samples[i];
+        const timeSec = s.timestamp - t0;  // relative time
+        if (s.altitude !== null) {
+          altData.push({ x: timeSec, y: s.altitude });
+        }
+        if (s.temperature !== null) {
+          tempData.push({ x: timeSec, y: s.temperature });
+        }
+        if (s.acceleration !== null) {
+          accelData.push({ x: timeSec, y: s.acceleration });
+        }
+        if (s.velocity !== null) {
+          velData.push({ x: timeSec, y: s.velocity });
+        }
+      }
+
+      altitudeChart.data.datasets[0].data = altData;
+      temperatureChart.data.datasets[0].data = tempData;
+      accelChart.data.datasets[0].data = accelData;
+      velocityChart.data.datasets[0].data = velData;
+
+      altitudeChart.update('none');
+      temperatureChart.update('none');
+      accelChart.update('none');
+      velocityChart.update('none');
+    }
+
+    // ------------------- PROCESS GPS --------------------
+    function processGps(gps) {
+      if (!Array.isArray(gps) || gps.length === 0) {
+        gpsChart.data.datasets[0].data = [];
+        gpsChart.data.datasets[0].pointBackgroundColor = [];
         gpsChart.update('none');
+        return;
+      }
+
+      // Sort by ascending timestamp
+      gps.sort((a,b) => a.timestamp - b.timestamp);
+      const gpsData = [];
+      const gpsColors = [];
+
+      for (let i = 0; i < gps.length; i++) {
+        const fraction = i / gps.length;
+        const color = `rgba(${Math.round(255*fraction)}, 0, ${Math.round(255*(1-fraction))}, 1)`;
+
+        gpsData.push({ x: gps[i].longitude, y: gps[i].latitude });
+        gpsColors.push(color);
+      }
+
+      gpsChart.data.datasets[0].data = gpsData;
+      gpsChart.data.datasets[0].pointBackgroundColor = gpsColors;
+      gpsChart.update('none');
+    }
+
+    // ------------------- MAIN UPDATE --------------------
+    async function updateCharts() {
+      try {
+        const resp = await fetch('/data');
+        const data = await resp.json();
+        // data = { samples: [...], gps: [...] }
+
+        processSamples(data.samples);
+        processGps(data.gps);
 
       } catch (err) {
         console.error("Error fetching data:", err);
@@ -254,8 +287,8 @@
     }
 
     // Poll every second
-    setInterval(fetchDataAndUpdateCharts, 1000);
-    fetchDataAndUpdateCharts();
+    setInterval(updateCharts, 1000);
+    updateCharts();
   </script>
 </body>
 </html>
