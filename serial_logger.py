@@ -3,7 +3,7 @@ import sqlite3
 import time
 from datetime import datetime
 
-SERIAL_PORT = "/dev/ttyUSB0"  # or COM3 on Windows
+SERIAL_PORT = "COM3"  # Update as needed
 BAUD_RATE = 9600
 DB_FILE = "telemetry.db"
 
@@ -49,8 +49,9 @@ def main():
                         line = ser.readline().decode('utf-8').strip()
                         if not line:
                             continue
-                        parts = line.split(',')
-                        if len(parts) != 5:
+
+                        parts = line.split(';')
+                        if len(parts) not in (3, 5):
                             print(f"[WARN] Malformed data: {line}")
                             continue
 
@@ -58,12 +59,12 @@ def main():
                             altitude = float(parts[0])
                             temperature = float(parts[1])
                             acceleration = float(parts[2])
-                            latitude = float(parts[3]) if parts[3] else None
-                            longitude = float(parts[4]) if parts[4] else None
+                            latitude = float(parts[3]) if len(parts) > 3 and parts[3] else None
+                            longitude = float(parts[4]) if len(parts) > 4 and parts[4] else None
                             timestamp = time.time()
                             data = (timestamp, altitude, temperature, acceleration, latitude, longitude)
                             log_data_to_db(data)
-                        except ValueError as ve:
+                        except ValueError:
                             print(f"[WARN] Failed to parse line: {line}")
 
                     except Exception as inner_err:

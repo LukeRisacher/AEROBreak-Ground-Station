@@ -2,8 +2,11 @@ import subprocess
 import time
 from datetime import datetime
 import os
+import shutil
 
 LOG_FILE = "core_supervisor.log"
+ARCHIVE_DIR = "archive"
+DB_FILE = "telemetry.db"
 
 
 def log(msg):
@@ -13,12 +16,25 @@ def log(msg):
     print(f"[{timestamp}] {msg}")
 
 
+def archive_db():
+    if os.path.exists(DB_FILE):
+        os.makedirs(ARCHIVE_DIR, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        archive_path = os.path.join(ARCHIVE_DIR, f"telemetry-{timestamp}.db")
+        shutil.move(DB_FILE, archive_path)
+        log(f"Archived existing DB to {archive_path}")
+    else:
+        log("No telemetry.db found — starting fresh.")
+
+
 def start_process(name, cmd):
     log(f"Starting {name} with command: {cmd}")
     return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
 def monitor():
+    archive_db()
+
     processes = {
         "serial_logger": start_process("serial_logger", ["python", "serial_logger.py"]),
         "app": start_process("app", ["python", "app.py"]),

@@ -51,30 +51,31 @@ def generate_raw_sample_subset(rows, N=100):
     ]
 
 # ---------------------------------------------------------------------
-# Compute "velocity" (ft/s) from altitude changes
+# Compute "velocity" (ft/s) from altitude changes using a wider window
 # ---------------------------------------------------------------------
-def compute_velocity(samples):
+def compute_velocity(samples, window=5):
     if len(samples) < 2:
         return samples
 
-    prev_alt = samples[0].get('altitude')
-    prev_time = samples[0].get('timestamp')
+    samples[0]['velocity'] = 0  # Set v0 = 0 explicitly
 
     for i in range(1, len(samples)):
-        curr = samples[i]
-        alt = curr.get('altitude')
-        t   = curr.get('timestamp')
+        if i < window:
+            samples[i]['velocity'] = None
+            continue
 
-        if (prev_alt is not None and alt is not None
-            and t is not None and prev_time is not None and t > prev_time):
-            delta_alt = alt - prev_alt
-            dt = t - prev_time
-            curr['velocity'] = delta_alt / dt
+        curr = samples[i]
+        prev = samples[i - window]
+
+        alt1 = curr.get('altitude')
+        alt0 = prev.get('altitude')
+        t1 = curr.get('timestamp')
+        t0 = prev.get('timestamp')
+
+        if None not in (alt0, alt1, t0, t1) and t1 > t0:
+            curr['velocity'] = (alt1 - alt0) / (t1 - t0)
         else:
             curr['velocity'] = None
-
-        prev_alt = alt
-        prev_time = t
 
     return samples
 
