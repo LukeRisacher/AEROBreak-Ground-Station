@@ -1,0 +1,16 @@
+# SQLite databases
+*.db
+*.db-journal
+*.sqlite
+
+# Core supervisor logs
+core_supervisor.log
+log.txt
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Editor/OS clutter
+.DS_Store
+Thumbs.db

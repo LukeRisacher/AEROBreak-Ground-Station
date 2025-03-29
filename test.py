@@ -4,16 +4,25 @@ import sqlite3
 import time
 import random
 import subprocess
-import signal
+import shutil
+from datetime import datetime
 
 DATABASE = 'telemetry.db'
 UPDATE_INTERVAL = 0.1  # 10 Hz
 GPS_INTERVAL = 1.0     # 1 Hz
 
+def archive_existing_database():
+    if os.path.exists(DATABASE):
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        archive_name = f"telemetry_{timestamp}.db"
+        shutil.move(DATABASE, archive_name)
+        print(f"[TEST] Archived old database as: {archive_name}")
+    else:
+        print("[TEST] No existing database to archive.")
+
 def init_db():
     """
-    Create the 'telemetry' table if it doesn't already exist.
-    We'll do this BEFORE launching the Flask app or inserting data.
+    Create the 'telemetry' table in a new database.
     """
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
@@ -30,6 +39,7 @@ def init_db():
     ''')
     conn.commit()
     conn.close()
+    print("[TEST] New database initialized.")
 
 def simulate_data():
     """
@@ -39,20 +49,18 @@ def simulate_data():
     altitude = 0.0
     velocity = 50.0  # ft/s
     lat, lon = 29.0, -95.0
-
     next_gps_time = time.time()
 
     while True:
         current_time = time.time()
 
-        # Simple altitude physics
         velocity += random.uniform(-0.5, 0.5)
         altitude += velocity * UPDATE_INTERVAL
         if altitude < 0:
             altitude = 0
 
-        temperature = random.uniform(60, 80)  # Fahrenheit
-        acceleration = random.uniform(-5, 5)  # ft/s^2
+        temperature = random.uniform(60, 80)
+        acceleration = random.uniform(-5, 5)
 
         conn = sqlite3.connect(DATABASE)
         c = conn.cursor()
@@ -73,32 +81,25 @@ def simulate_data():
 
         conn.commit()
         conn.close()
-
         time.sleep(UPDATE_INTERVAL)
 
 def run_flask_app():
     """
-    Launch the Flask app in a subprocess so we can continue to run
-    data simulation in the main process.
+    Launch the Flask app in a subprocess.
     """
-    # Build an absolute path to app.py to avoid "No such file" on Windows
     script_dir = os.path.dirname(os.path.abspath(__file__))
     app_path = os.path.join(script_dir, 'app.py')
-
-    # Launch app.py with same Python interpreter
     return subprocess.Popen([sys.executable, app_path])
 
 if __name__ == '__main__':
-    # 1) Initialize DB (create table if missing)
+    archive_existing_database()
     init_db()
 
-    # 2) Launch Flask app as a subprocess
     print("[TEST] Launching Flask app...")
     flask_process = run_flask_app()
     time.sleep(2)  # Give Flask time to initialize
 
     try:
-        # 3) Generate data until user interrupts
         simulate_data()
     except KeyboardInterrupt:
         pass

@@ -1,16 +1,17 @@
 import serial
 import sqlite3
 import time
-import math
+from datetime import datetime
 
-SERIAL_PORT = 'COM4'
-BAUDRATE = 9600  # Adjust as needed
-DATABASE = 'telemetry.db'
+SERIAL_PORT = "/dev/ttyUSB0"  # or COM3 on Windows
+BAUD_RATE = 9600
+DB_FILE = "telemetry.db"
 
-def initialize_database():
-    """Create the telemetry table if it doesn't exist."""
-    conn = sqlite3.connect(DATABASE)
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    c.execute("PRAGMA journal_mode=WAL;")
     c.execute('''
         CREATE TABLE IF NOT EXISTS telemetry (
             timestamp REAL,
@@ -23,71 +24,55 @@ def initialize_database():
     ''')
     conn.commit()
     conn.close()
-    print("Database initialized or already exists.")
 
-def write_data_to_db(timestamp, altitude, temperature, acceleration, latitude=None, longitude=None):
-    """Insert a row into the telemetry table."""
+
+def log_data_to_db(data):
     try:
-        conn = sqlite3.connect(DATABASE)
+        conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute('''INSERT INTO telemetry (timestamp, altitude, temperature, acceleration, latitude, longitude)
-                     VALUES (?, ?, ?, ?, ?, ?)''',
-                  (timestamp, altitude, temperature, acceleration, latitude, longitude))
+        c.execute("PRAGMA journal_mode=WAL;")
+        c.execute("INSERT INTO telemetry VALUES (?, ?, ?, ?, ?, ?)", data)
         conn.commit()
-    except Exception as e:
-        print("Database write error:", e)
-    finally:
         conn.close()
-
-def parse_serial_line(line):
-    """
-    Parse the line from the serial port.
-    For example, if the Arduino sends a comma-separated string like:
-      "alt, temp, accX, accY, accZ"
-    then this function converts the first two values to float,
-    and calculates the magnitude of the acceleration vector.
-    """
-    try:
-        parts = line.strip().split(';')
-        if len(parts) < 5:
-            raise ValueError("Not enough data fields")
-        alt = float(parts[0])
-        temp = float(parts[1])
-        # Compute the magnitude of the acceleration vector: sqrt(x^2 + y^2 + z^2)
-        acc_x = float(parts[2])
-        acc_y = float(parts[3])
-        acc_z = float(parts[4])
-        acc_magnitude = math.sqrt(acc_x**2 + acc_y**2 + acc_z**2)
-        return alt, temp, acc_magnitude
     except Exception as e:
-        print("Parsing error:", e)
-        return None
+        print(f"[ERROR] Failed to write to database: {e}")
+
 
 def main():
-    # Ensure the database and table exist before starting serial reading.
-    initialize_database()
-    
-    # Open the serial port.
-    try:
-        ser = serial.Serial(SERIAL_PORT, BAUDRATE, timeout=1)
-        print("Listening on", SERIAL_PORT)
-    except Exception as e:
-        print("Error opening serial port:", e)
-        return
-
+    init_db()
     while True:
         try:
-            line = ser.readline().decode('utf-8')
-            if line:
-                parsed = parse_serial_line(line)
-                if parsed:
-                    altitude, temperature, acceleration = parsed
-                    timestamp = time.time()
-                    write_data_to_db(timestamp, altitude, temperature, acceleration)
-                    print(f"Logged: {timestamp}, {altitude}, {temperature}, {acceleration}")
-        except Exception as e:
-            print("Error during serial read or DB write:", e)
-            time.sleep(1)  # Brief pause on error
+            with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
+                print("[INFO] Listening on serial port...")
+                while True:
+                    try:
+                        line = ser.readline().decode('utf-8').strip()
+                        if not line:
+                            continue
+                        parts = line.split(',')
+                        if len(parts) != 5:
+                            print(f"[WARN] Malformed data: {line}")
+                            continue
+
+                        try:
+                            altitude = float(parts[0])
+                            temperature = float(parts[1])
+                            acceleration = float(parts[2])
+                            latitude = float(parts[3]) if parts[3] else None
+                            longitude = float(parts[4]) if parts[4] else None
+                            timestamp = time.time()
+                            data = (timestamp, altitude, temperature, acceleration, latitude, longitude)
+                            log_data_to_db(data)
+                        except ValueError as ve:
+                            print(f"[WARN] Failed to parse line: {line}")
+
+                    except Exception as inner_err:
+                        print(f"[ERROR] Serial read failed: {inner_err}")
+
+        except serial.SerialException as e:
+            print(f"[ERROR] Could not open serial port: {e}")
+            time.sleep(5)  # wait and retry
+
 
 if __name__ == '__main__':
     main()
