@@ -6,7 +6,7 @@
 # Core supervisor logs
 core_supervisor.log
 log.txt
-
+serial_logger.log
 # Python cache
 __pycache__/
 *.py[cod]

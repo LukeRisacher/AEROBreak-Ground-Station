@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <title>Rocket Telemetry Dashboard</title>
+  <!-- Ensure proper rendering on mobile devices -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body {
@@ -52,6 +54,9 @@
 </head>
 <body>
   <h1>Rocket Telemetry Dashboard</h1>
+  <!-- Area for displaying error messages to the user -->
+  <div id="errorMessage" style="color: red; margin-bottom: 10px;"></div>
+  
   <div class="dashboard-container">
     <div class="charts-grid">
       <div class="chart-container"><canvas id="altitudeChart"></canvas></div>
@@ -65,6 +70,7 @@
   </div>
 
   <script>
+    // Utility function to create a Chart.js chart with common settings
     const createChart = (id, label, color, yTitle) => {
       return new Chart(document.getElementById(id), {
         type: 'line',
@@ -102,11 +108,13 @@
       });
     };
 
+    // Initialize charts for telemetry data
     const altitudeChart = createChart('altitudeChart', 'Altitude (ft)', 'blue', 'Altitude (ft)');
     const velocityChart = createChart('velocityChart', 'Velocity (ft/s)', 'orange', 'Velocity (ft/s)');
     const accelChart = createChart('accelChart', 'Acceleration (ft/s²)', 'green', 'Acceleration (ft/s²)');
     const temperatureChart = createChart('temperatureChart', 'Temperature (°F)', 'red', 'Temperature (°F)');
 
+    // Initialize GPS chart with scatter type
     const gpsChart = new Chart(document.getElementById('gpsChart'), {
       type: 'scatter',
       data: { datasets: [] },
@@ -135,15 +143,24 @@
       }
     });
 
+    // Update charts with data from the /data endpoint
     async function updateCharts() {
       try {
         const res = await fetch('/data');
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
         const data = await res.json();
         const samples = data.samples || [];
         const gps = data.gps || [];
 
+        // Reset any previous error messages
+        document.getElementById('errorMessage').innerText = '';
+
+        // Get reference time from the first sample
         const t0 = samples[0]?.timestamp || 0;
 
+        // Function to update individual charts based on a key
         const update = (chart, key) => {
           chart.data.datasets[0].data = samples
             .filter(s => s[key] !== null)
@@ -156,6 +173,7 @@
         update(accelChart, 'acceleration');
         update(temperatureChart, 'temperature');
 
+        // Update GPS chart if enough data is available
         if (gps.length >= 2) {
           const gpsT0 = gps[0].timestamp;
           const gpsT1 = gps[gps.length - 1].timestamp;
@@ -170,8 +188,8 @@
           const pointColors = gps.map((g, i) => {
             if (i === 0 || i === gps.length - 1) return 'black';
             const ratio = (gpsT1 - g.timestamp) / range;
-            const r = Math.round(255 * (1 - ratio)); // red = new
-            const b = Math.round(255 * ratio);       // blue = old
+            const r = Math.round(255 * (1 - ratio)); // new points are red
+            const b = Math.round(255 * ratio);       // older points are blue
             return `rgba(${r}, 0, ${b}, ${0.3 + 0.7 * (1 - ratio)})`;
           });
 
@@ -179,19 +197,7 @@
             (i === 0 || i === gps.length - 1) ? 6 : 3
           );
 
-          const segments = [];
-          for (let i = 1; i < gps.length; i++) {
-            const ratio = (gpsT1 - gps[i].timestamp) / range;
-            const r = Math.round(255 * (1 - ratio));
-            const b = Math.round(255 * ratio);
-            const a = 0.3 + 0.7 * (1 - ratio);
-            segments.push({
-              x: gps[i].longitude,
-              y: gps[i].latitude,
-              borderColor: `rgba(${r}, 0, ${b}, ${a})`
-            });
-          }
-
+          // Update GPS chart dataset with the new points and styling
           gpsChart.data.datasets = [{
             label: 'GPS Path',
             data: gpsPoints,
@@ -208,7 +214,6 @@
             borderWidth: 2,
             showLine: true
           }];
-          
 
           gpsChart.options.scales.x.min = Math.min(...gps.map(g => g.longitude)) - 0.0001;
           gpsChart.options.scales.x.max = Math.max(...gps.map(g => g.longitude)) + 0.0001;
@@ -218,12 +223,18 @@
           gpsChart.update('none');
         }
 
+        // Schedule the next update after 1 second
         setTimeout(updateCharts, 1000);
       } catch (err) {
         console.error("Error fetching data:", err);
+        // Display a user-friendly error message in the UI
+        document.getElementById('errorMessage').innerText = "Error fetching telemetry data. Please check the connection.";
+        // Retry after a delay
+        setTimeout(updateCharts, 5000);
       }
     }
 
+    // Start the update cycle
     updateCharts();
   </script>
 </body>
