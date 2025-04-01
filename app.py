@@ -25,30 +25,44 @@ def get_all_rows():
     return rows
 
 # ---------------------------------------------------------------------
-# Downsample real rows to exactly N equally spaced entries
+# Hybrid downsample: bin older data, keep raw recent tail
 # ---------------------------------------------------------------------
-def generate_raw_sample_subset(rows, N=100):
+def hybrid_binned_downsample(rows, N=100):
     count = len(rows)
     if count == 0:
         return []
 
-    if count <= N:
-        subset = rows
-    else:
-        step = count / (N - 1)
-        subset = [rows[min(int(i * step), count - 1)] for i in range(N)]
+    bin_size = max(1, count // N)
+    binned = []
 
-    altitudes = [row[1] for row in subset if row[1] is not None]
+    altitudes = [row[1] for row in rows if row[1] is not None]
     min_altitude = min(altitudes) if altitudes else 0
 
-    return [
-        {
+    for i in range(0, bin_size * N, bin_size):
+        bin_rows = rows[i:i+bin_size]
+        if not bin_rows:
+            continue
+        def avg(idx):
+            vals = [r[idx] for r in bin_rows if r[idx] is not None]
+            return sum(vals) / len(vals) if vals else None
+        timestamp = bin_rows[len(bin_rows)//2][0]
+        binned.append({
+            'timestamp': timestamp,
+            'altitude': (avg(1) - min_altitude) if avg(1) is not None else None,
+            'temperature': avg(2),
+            'acceleration': avg(3)
+        })
+
+    tail = rows[bin_size * N:]
+    for row in tail:
+        binned.append({
             'timestamp': row[0],
             'altitude': (row[1] - min_altitude) if row[1] is not None else None,
             'temperature': row[2],
             'acceleration': row[3]
-        } for row in subset
-    ]
+        })
+
+    return binned
 
 # ---------------------------------------------------------------------
 # Compute "velocity" (ft/s) from altitude changes using a wider window
@@ -80,20 +94,16 @@ def compute_velocity(samples, window=5):
     return samples
 
 # ---------------------------------------------------------------------
-# Return last 20 real GPS points
+# Return ALL valid GPS points
 # ---------------------------------------------------------------------
-def get_last_20_gps(rows, n=20):
-    gps_rows = [r for r in rows if (r[4] is not None and r[5] is not None)]
-    if not gps_rows:
-        return []
-
-    subset = gps_rows[-n:] if len(gps_rows) > n else gps_rows
+def get_all_gps(rows):
     return [
         {
             'timestamp': row[0],
             'latitude': row[4],
             'longitude': row[5]
-        } for row in subset
+        }
+        for row in rows if row[4] is not None and row[5] is not None
     ]
 
 # ---------------------------------------------------------------------
@@ -107,9 +117,9 @@ def index():
 def data_api():
     try:
         all_rows = get_all_rows()
-        samples = generate_raw_sample_subset(all_rows, N=100)
+        samples = hybrid_binned_downsample(all_rows, N=100)
         with_velocity = compute_velocity(samples)
-        gps_points = get_last_20_gps(all_rows, n=20)
+        gps_points = get_all_gps(all_rows)
         return jsonify({"samples": with_velocity, "gps": gps_points, "mode": "live"})
     except Exception as e:
         print("Error in /data endpoint:", e)

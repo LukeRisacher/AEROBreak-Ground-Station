@@ -16,10 +16,7 @@
       justify-content: space-between;
       width: 97vw;
       height: 90vh;
-      padding: 3vh;
-      padding-top: 1vh;
-      padding-bottom: 0vh;
-      gap: 0;
+      padding: 3vh 3vh 0 3vh;
     }
     .charts-grid {
       display: grid;
@@ -51,22 +48,10 @@
       height: 100% !important;
       aspect-ratio: 1 / 1;
     }
-    #slider-container {
-      display: none;
-      padding: 1em;
-    }
-    #time-slider {
-      width: 80%;
-    }
   </style>
 </head>
 <body>
   <h1>Rocket Telemetry Dashboard</h1>
-  <div id="slider-container">
-    <label for="time-slider">Scrub Time: <span id="time-label">0.0s</span></label><br>
-    <input type="range" id="time-slider" min="0" max="1" step="0.1" value="0">
-  </div>
-
   <div class="dashboard-container">
     <div class="charts-grid">
       <div class="chart-container"><canvas id="altitudeChart"></canvas></div>
@@ -80,21 +65,18 @@
   </div>
 
   <script>
-    let archiveMode = false;
-    let rawSamples = [], rawGps = [], baseTime = 0, maxTime = 1;
-
-    const createChart = (id, label, borderColor, yTitle) => {
+    const createChart = (id, label, color, yTitle) => {
       return new Chart(document.getElementById(id), {
         type: 'line',
         data: {
           datasets: [{
             label,
             data: [],
-            borderColor,
-            backgroundColor: borderColor,
+            borderColor: color,
+            backgroundColor: color,
             fill: false,
-            pointRadius: 3,
-            pointHoverRadius: 4,
+            pointRadius: 2,
+            pointHoverRadius: 3,
             pointStyle: 'rectRounded',
             borderWidth: 2,
             showLine: true
@@ -103,19 +85,12 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          interaction: {
-            mode: 'nearest',
-            intersect: false
-          },
+          interaction: { mode: 'nearest', intersect: false },
           plugins: {
             tooltip: {
               callbacks: {
                 title: () => '',
-                label: function(ctx) {
-                  const x = ctx.parsed.x.toFixed(1);
-                  const y = ctx.parsed.y.toFixed(2);
-                  return `t: +${x}s, y: ${y}`;
-                }
+                label: ctx => `t: +${ctx.parsed.x.toFixed(1)}s, y: ${ctx.parsed.y.toFixed(2)}`
               }
             }
           },
@@ -128,9 +103,9 @@
     };
 
     const altitudeChart = createChart('altitudeChart', 'Altitude (ft)', 'blue', 'Altitude (ft)');
-    const temperatureChart = createChart('temperatureChart', 'Temperature (°F)', 'red', 'Temperature (°F)');
-    const accelChart = createChart('accelChart', 'Acceleration (ft/s²)', 'green', 'Acceleration (ft/s²)');
     const velocityChart = createChart('velocityChart', 'Velocity (ft/s)', 'orange', 'Velocity (ft/s)');
+    const accelChart = createChart('accelChart', 'Acceleration (ft/s²)', 'green', 'Acceleration (ft/s²)');
+    const temperatureChart = createChart('temperatureChart', 'Temperature (°F)', 'red', 'Temperature (°F)');
 
     const gpsChart = new Chart(document.getElementById('gpsChart'), {
       type: 'scatter',
@@ -139,7 +114,7 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          title: { display: true, text: 'GPS Path (Color = Time, Hot → Cold)' },
+          title: { display: true, text: 'GPS Path (Red → Blue)' },
           legend: { display: false },
           tooltip: {
             callbacks: {
@@ -154,152 +129,99 @@
           }
         },
         scales: {
-          x: { title: { display: true, text: 'Longitude' } },
-          y: { title: { display: true, text: 'Latitude' } }
+          x: { title: { display: true, text: 'Longitude' }, type: 'linear' },
+          y: { title: { display: true, text: 'Latitude' }, type: 'linear' }
         }
       }
     });
 
-    function renderChartsAt(timeLimit) {
-      document.getElementById('time-label').textContent = `+${timeLimit.toFixed(1)}s`;
-
-      const samples = rawSamples.filter(s => (s.timestamp - baseTime) <= timeLimit);
-      const gps = rawGps.filter(g => (g.timestamp - baseTime) <= timeLimit);
-
-      const updateChart = (chart, key) => {
-        chart.data.datasets[0].data = samples
-          .filter(s => s[key] !== null)
-          .map(s => ({ x: s.timestamp - baseTime, y: s[key] }));
-        chart.update('none');
-      };
-
-      updateChart(altitudeChart, 'altitude');
-      updateChart(temperatureChart, 'temperature');
-      updateChart(accelChart, 'acceleration');
-      updateChart(velocityChart, 'velocity');
-
-      // GPS
-      const ctx = gpsChart.ctx;
-      const rangeT = maxTime || 1;
-
-      const interpolateColor = (t) => {
-        const ratio = (t - baseTime) / rangeT;
-        const r = Math.round(255 * (1 - ratio));
-        const b = Math.round(255 * ratio);
-        return `rgb(${r}, 0, ${b})`;
-      };
-
-      const gradient = ctx.createLinearGradient(0, 0, gpsChart.width, 0);
-      gps.forEach(g => {
-        const ratio = (g.timestamp - baseTime) / rangeT;
-        gradient.addColorStop(ratio, interpolateColor(g.timestamp));
-      });
-
-      gpsChart.data.datasets = [{
-        data: gps.map(g => ({
-          x: g.longitude,
-          y: g.latitude,
-          t: g.timestamp - baseTime
-        })),
-        pointBackgroundColor: gps.map(g => interpolateColor(g.timestamp)),
-        pointRadius: 4,
-        pointHoverRadius: 5,
-        pointStyle: 'rectRounded',
-        borderColor: gradient,
-        showLine: true,
-        label: 'GPS Path'
-      }];
-      gpsChart.update('none');
-    }
-
     async function updateCharts() {
       try {
-        const resp = await fetch('/data');
-        const data = await resp.json();
+        const res = await fetch('/data');
+        const data = await res.json();
+        const samples = data.samples || [];
+        const gps = data.gps || [];
 
-        if (data.mode === "archive") {
-          archiveMode = true;
-          rawSamples = data.samples;
-          rawGps = data.gps;
+        const t0 = samples[0]?.timestamp || 0;
 
-          baseTime = rawSamples[0]?.timestamp ?? 0;
-          maxTime = rawSamples.at(-1)?.timestamp - baseTime ?? 1;
+        const update = (chart, key) => {
+          chart.data.datasets[0].data = samples
+            .filter(s => s[key] !== null)
+            .map(s => ({ x: s.timestamp - t0, y: s[key] }));
+          chart.update('none');
+        };
 
-          const slider = document.getElementById('time-slider');
-          slider.max = maxTime.toFixed(1);
-          slider.value = maxTime.toFixed(1);
-          document.getElementById('slider-container').style.display = 'block';
-          slider.addEventListener('input', () => renderChartsAt(parseFloat(slider.value)));
+        update(altitudeChart, 'altitude');
+        update(velocityChart, 'velocity');
+        update(accelChart, 'acceleration');
+        update(temperatureChart, 'temperature');
 
-          renderChartsAt(maxTime); // render full by default
-        } else {
-          processSamples(data.samples);
-          processGps(data.gps);
-          setTimeout(updateCharts, 1000); // live mode
+        if (gps.length >= 2) {
+          const gpsT0 = gps[0].timestamp;
+          const gpsT1 = gps[gps.length - 1].timestamp;
+          const range = gpsT1 - gpsT0 || 1;
+
+          const gpsPoints = gps.map((g, i) => ({
+            x: g.longitude,
+            y: g.latitude,
+            t: g.timestamp - gpsT0
+          }));
+
+          const pointColors = gps.map((g, i) => {
+            if (i === 0 || i === gps.length - 1) return 'black';
+            const ratio = (gpsT1 - g.timestamp) / range;
+            const r = Math.round(255 * (1 - ratio)); // red = new
+            const b = Math.round(255 * ratio);       // blue = old
+            return `rgba(${r}, 0, ${b}, ${0.3 + 0.7 * (1 - ratio)})`;
+          });
+
+          const pointSizes = gps.map((_, i) =>
+            (i === 0 || i === gps.length - 1) ? 6 : 3
+          );
+
+          const segments = [];
+          for (let i = 1; i < gps.length; i++) {
+            const ratio = (gpsT1 - gps[i].timestamp) / range;
+            const r = Math.round(255 * (1 - ratio));
+            const b = Math.round(255 * ratio);
+            const a = 0.3 + 0.7 * (1 - ratio);
+            segments.push({
+              x: gps[i].longitude,
+              y: gps[i].latitude,
+              borderColor: `rgba(${r}, 0, ${b}, ${a})`
+            });
+          }
+
+          gpsChart.data.datasets = [{
+            label: 'GPS Path',
+            data: gpsPoints,
+            pointBackgroundColor: pointColors,
+            pointRadius: pointSizes,
+            pointHoverRadius: 5,
+            pointBorderWidth: 0,
+            pointStyle: 'circle',
+            segment: {
+              borderColor: ctx => ctx.p1.raw && ctx.p1.raw.t !== undefined
+                ? pointColors[ctx.p1DataIndex]
+                : 'rgba(0,0,0,0.1)'
+            },
+            borderWidth: 2,
+            showLine: true
+          }];
+          
+
+          gpsChart.options.scales.x.min = Math.min(...gps.map(g => g.longitude)) - 0.0001;
+          gpsChart.options.scales.x.max = Math.max(...gps.map(g => g.longitude)) + 0.0001;
+          gpsChart.options.scales.y.min = Math.min(...gps.map(g => g.latitude)) - 0.0001;
+          gpsChart.options.scales.y.max = Math.max(...gps.map(g => g.latitude)) + 0.0001;
+
+          gpsChart.update('none');
         }
+
+        setTimeout(updateCharts, 1000);
       } catch (err) {
         console.error("Error fetching data:", err);
       }
-    }
-
-    function processSamples(samples) {
-      if (!Array.isArray(samples) || samples.length === 0) return;
-      samples.sort((a, b) => a.timestamp - b.timestamp);
-      const t0 = samples[0].timestamp;
-
-      const updateChart = (chart, key) => {
-        chart.data.datasets[0].data = samples
-          .filter(s => s[key] !== null)
-          .map(s => ({ x: s.timestamp - t0, y: s[key] }));
-        chart.update('none');
-      };
-
-      updateChart(altitudeChart, 'altitude');
-      updateChart(temperatureChart, 'temperature');
-      updateChart(accelChart, 'acceleration');
-      updateChart(velocityChart, 'velocity');
-    }
-
-    function processGps(gps) {
-      if (!Array.isArray(gps) || gps.length === 0) return;
-      gps.sort((a, b) => a.timestamp - b.timestamp);
-
-      const gpsT0 = gps[0].timestamp;
-      const gpsT1 = gps[gps.length - 1].timestamp;
-      const rangeT = gpsT1 - gpsT0 || 1;
-
-      const interpolateColor = (t) => {
-        const ratio = (t - gpsT0) / rangeT;
-        const r = Math.round(255 * (1 - ratio));
-        const b = Math.round(255 * ratio);
-        return `rgb(${r}, 0, ${b})`;
-      };
-
-      const ctx = gpsChart.ctx;
-      const gradient = ctx.createLinearGradient(0, 0, gpsChart.width, 0);
-
-      gps.forEach(g => {
-        const ratio = (g.timestamp - gpsT0) / rangeT;
-        gradient.addColorStop(ratio, interpolateColor(g.timestamp));
-      });
-
-      const dataset = {
-        data: gps.map(g => ({
-          x: g.longitude,
-          y: g.latitude,
-          t: g.timestamp - gpsT0
-        })),
-        pointBackgroundColor: gps.map(g => interpolateColor(g.timestamp)),
-        pointRadius: 4,
-        pointHoverRadius: 5,
-        pointStyle: 'rectRounded',
-        borderColor: gradient,
-        showLine: true,
-        label: 'GPS Path'
-      };
-
-      gpsChart.data.datasets = [dataset];
-      gpsChart.update('none');
     }
 
     updateCharts();

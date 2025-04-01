@@ -8,13 +8,17 @@ import shutil
 from datetime import datetime
 
 DATABASE = 'telemetry.db'
+ARCHIVE_FOLDER = 'archive'
 UPDATE_INTERVAL = 0.1  # 10 Hz
 GPS_INTERVAL = 1.0     # 1 Hz
 
 def archive_existing_database():
+    if not os.path.exists(ARCHIVE_FOLDER):
+        os.makedirs(ARCHIVE_FOLDER)
+
     if os.path.exists(DATABASE):
         timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        archive_name = f"telemetry_{timestamp}.db"
+        archive_name = os.path.join(ARCHIVE_FOLDER, f"telemetry_{timestamp}.db")
         shutil.move(DATABASE, archive_name)
         print(f"[TEST] Archived old database as: {archive_name}")
     else:
@@ -47,37 +51,50 @@ def simulate_data():
     """
     print("[TEST] Starting data simulation...")
     altitude = 0.0
-    velocity = 50.0  # ft/s
+    velocity = 0.0
+    acceleration = 50.0
     lat, lon = 29.0, -95.0
     next_gps_time = time.time()
+    start_time = time.time()
 
     while True:
-        current_time = time.time()
+        now = time.time()
+        t = now - start_time
 
-        velocity += random.uniform(-0.5, 0.5)
+        # Launch for ~20s, coast ~5s, then descend
+        if t < 20:
+            acceleration = 50.0 + random.uniform(-5, 5)
+        elif t < 25:
+            acceleration = random.uniform(-1, 1)
+        else:
+            acceleration = -32.2 + random.uniform(-2, 2)
+
+        # Integrate motion
+        velocity += acceleration * UPDATE_INTERVAL
         altitude += velocity * UPDATE_INTERVAL
-        if altitude < 0:
-            altitude = 0
+        altitude = max(0, altitude)
 
-        temperature = random.uniform(60, 80)
-        acceleration = random.uniform(-5, 5)
+        # Simulate random sensor dropouts
+        alt = altitude if random.random() > 0.01 else None
+        acc = acceleration if random.random() > 0.01 else None
+        temp = random.uniform(60, 80) if random.random() > 0.01 else None
 
         conn = sqlite3.connect(DATABASE)
         c = conn.cursor()
 
-        if current_time >= next_gps_time:
-            lat += random.uniform(-0.0001, 0.0001)
-            lon += random.uniform(-0.0001, 0.0001)
-            next_gps_time = current_time + GPS_INTERVAL
+        if now >= next_gps_time:
+            lat += random.uniform(-0.00005, 0.00005)
+            lon += random.uniform(-0.00005, 0.00005)
+            next_gps_time += GPS_INTERVAL
             c.execute('''
                 INSERT INTO telemetry (timestamp, altitude, temperature, acceleration, latitude, longitude)
                 VALUES (?, ?, ?, ?, ?, ?)
-            ''', (current_time, altitude, temperature, acceleration, lat, lon))
+            ''', (now, alt, temp, acc, lat, lon))
         else:
             c.execute('''
                 INSERT INTO telemetry (timestamp, altitude, temperature, acceleration, latitude, longitude)
                 VALUES (?, ?, ?, ?, NULL, NULL)
-            ''', (current_time, altitude, temperature, acceleration))
+            ''', (now, alt, temp, acc))
 
         conn.commit()
         conn.close()
