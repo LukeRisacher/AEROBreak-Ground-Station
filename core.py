@@ -45,7 +45,8 @@ def start_process(name, cmd):
     """
     logging.info(f"Starting {name} with command: {cmd}")
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        # Use DEVNULL to avoid blocking on output buffering.
+        proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
         return proc
     except Exception as e:
         logging.error(f"Failed to start process {name}: {e}")
@@ -90,13 +91,7 @@ def monitor():
             ret = proc.poll()
             if ret is not None:
                 logging.warning(f"{name} exited with code {ret}. Restarting...")
-                try:
-                    out, _ = proc.communicate(timeout=5)
-                    if out:
-                        logging.info(f"{name} output before crash:\n{out}")
-                except Exception as e:
-                    logging.error(f"Error retrieving output from {name}: {e}")
-                # Restart the process
+                # Restart the process without waiting for buffered output (since we now discard it)
                 new_proc = start_process(name, ["python", f"{name}.py"])
                 if new_proc:
                     processes[name] = new_proc
